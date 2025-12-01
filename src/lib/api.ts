@@ -5,6 +5,7 @@ export type Product = {
   name: string;
   description: string;
   image_url?: string;
+  in_stock?: boolean;
 };
 
 export type Order = {
@@ -53,15 +54,29 @@ export const api = {
     return response.json();
   },
 
-  async createProduct(name: string, description: string, image_url: string = '/placeholder.svg'): Promise<{ product: Product }> {
+  async createProduct(name: string, description: string, image_url: string = '/placeholder.svg', in_stock: boolean = true): Promise<{ product: Product }> {
     const response = await fetch(`${API_URL}?action=create_product`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, image_url })
+      body: JSON.stringify({ name, description, image_url, in_stock })
     });
     
     if (!response.ok) {
       throw new Error('Failed to create product');
+    }
+    
+    return response.json();
+  },
+
+  async updateProduct(productId: number, data: { name?: string; description?: string; image_url?: string; in_stock?: boolean }): Promise<{ product: Product }> {
+    const response = await fetch(`${API_URL}?action=update_product`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_id: productId, ...data })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to update product');
     }
     
     return response.json();

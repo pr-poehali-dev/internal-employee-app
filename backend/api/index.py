@@ -42,6 +42,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return handle_get_products(conn)
         elif method == 'POST' and action == 'create_product':
             return handle_create_product(conn, event)
+        elif method == 'PUT' and action == 'update_product':
+            return handle_update_product(conn, event)
         elif method == 'GET' and action == 'orders':
             return handle_get_orders(conn, event)
         elif method == 'POST' and action == 'create_order':
@@ -75,7 +77,7 @@ def handle_login(conn, event: Dict[str, Any]) -> Dict[str, Any]:
 
 def handle_get_products(conn) -> Dict[str, Any]:
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, description, image_url FROM products ORDER BY id")
+    cursor.execute("SELECT id, name, description, image_url, in_stock FROM products ORDER BY id")
     products = cursor.fetchall()
     cursor.close()
     
@@ -88,14 +90,15 @@ def handle_create_product(conn, event: Dict[str, Any]) -> Dict[str, Any]:
     name = body.get('name', '')
     description = body.get('description', '')
     image_url = body.get('image_url', '/placeholder.svg')
+    in_stock = body.get('in_stock', True)
     
     if not name or not description:
         return error_response('Name and description required', 400)
     
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO products (name, description, image_url) VALUES (%s, %s, %s) RETURNING id, name, description, image_url",
-        (name, description, image_url)
+        "INSERT INTO products (name, description, image_url, in_stock) VALUES (%s, %s, %s, %s) RETURNING id, name, description, image_url, in_stock",
+        (name, description, image_url, in_stock)
     )
     product = cursor.fetchone()
     conn.commit()
@@ -174,6 +177,49 @@ def handle_create_order(conn, event: Dict[str, Any]) -> Dict[str, Any]:
     cursor.close()
     
     return success_response({'order_id': order_id})
+
+def handle_update_product(conn, event: Dict[str, Any]) -> Dict[str, Any]:
+    body = json.loads(event.get('body', '{}'))
+    product_id = body.get('product_id')
+    name = body.get('name')
+    description = body.get('description')
+    image_url = body.get('image_url')
+    in_stock = body.get('in_stock')
+    
+    if not product_id:
+        return error_response('product_id required', 400)
+    
+    cursor = conn.cursor()
+    
+    updates = []
+    params = []
+    
+    if name is not None:
+        updates.append("name = %s")
+        params.append(name)
+    if description is not None:
+        updates.append("description = %s")
+        params.append(description)
+    if image_url is not None:
+        updates.append("image_url = %s")
+        params.append(image_url)
+    if in_stock is not None:
+        updates.append("in_stock = %s")
+        params.append(in_stock)
+    
+    if not updates:
+        return error_response('No fields to update', 400)
+    
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    params.append(product_id)
+    
+    query = f"UPDATE products SET {', '.join(updates)} WHERE id = %s RETURNING id, name, description, image_url, in_stock"
+    cursor.execute(query, params)
+    product = cursor.fetchone()
+    conn.commit()
+    cursor.close()
+    
+    return success_response({'product': dict(product)})
 
 def handle_update_order(conn, event: Dict[str, Any]) -> Dict[str, Any]:
     body = json.loads(event.get('body', '{}'))

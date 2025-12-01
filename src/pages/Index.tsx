@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import Icon from '@/components/ui/icon';
 import { useToast } from '@/hooks/use-toast';
 import { api, type Product as ApiProduct, type Order as ApiOrder, type User } from '@/lib/api';
@@ -17,6 +18,7 @@ type Product = {
   name: string;
   description: string;
   image: string;
+  in_stock?: boolean;
 };
 
 type CartItem = {
@@ -104,7 +106,8 @@ const Index = () => {
         id: p.id,
         name: p.name,
         description: p.description,
-        image: p.image_url || '/placeholder.svg'
+        image: p.image_url || '/placeholder.svg',
+        in_stock: p.in_stock ?? true
       })));
     } catch (error) {
       toast({
@@ -342,9 +345,14 @@ const Index = () => {
                   .map(product => (
                   <Card
                     key={product.id}
-                    className={`cursor-pointer hover:shadow-md transition-shadow ${viewMode === 'list' ? 'flex flex-row' : ''}`}
-                    onClick={() => setSelectedProduct(product)}
+                    className={`cursor-pointer hover:shadow-md transition-shadow relative ${viewMode === 'list' ? 'flex flex-row' : ''} ${!product.in_stock ? 'opacity-60' : ''}`}
+                    onClick={() => product.in_stock && setSelectedProduct(product)}
                   >
+                    {!product.in_stock && (
+                      <div className="absolute top-2 right-2 z-10">
+                        <Badge variant="destructive">Нет в наличии</Badge>
+                      </div>
+                    )}
                     {viewMode === 'grid' ? (
                       <>
                         <div className="aspect-square overflow-hidden bg-gray-100">
@@ -582,6 +590,7 @@ const AdminPanel = ({
   updateOrderStatus: (orderId: number, status: Order['status']) => void;
 }) => {
   const [showAddProduct, setShowAddProduct] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [newProduct, setNewProduct] = useState({ name: '', description: '', image: '/placeholder.svg' });
   const { toast } = useToast();
 
@@ -594,7 +603,8 @@ const AdminPanel = ({
         id: product.id,
         name: product.name,
         description: product.description,
-        image: product.image_url || '/placeholder.svg'
+        image: product.image_url || '/placeholder.svg',
+        in_stock: product.in_stock ?? true
       }]);
       setNewProduct({ name: '', description: '', image: '/placeholder.svg' });
       setShowAddProduct(false);
@@ -607,6 +617,29 @@ const AdminPanel = ({
       toast({
         title: 'Ошибка',
         description: 'Не удалось добавить товар',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const updateProduct = async (productId: number, in_stock: boolean) => {
+    try {
+      const { product } = await api.updateProduct(productId, { in_stock });
+      setProducts(products.map(p => 
+        p.id === productId ? {
+          ...p,
+          in_stock: product.in_stock ?? true
+        } : p
+      ));
+
+      toast({
+        title: 'Статус обновлён',
+        description: in_stock ? 'Товар в наличии' : 'Товара нет в наличии'
+      });
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось обновить статус',
         variant: 'destructive'
       });
     }
@@ -711,6 +744,17 @@ const AdminPanel = ({
                   <CardTitle className="text-lg">{product.name}</CardTitle>
                   <CardDescription>{product.description}</CardDescription>
                 </CardHeader>
+                <CardContent>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full"
+                    onClick={() => setEditingProduct(product)}
+                  >
+                    <Icon name="Edit" size={16} className="mr-2" />
+                    Редактировать
+                  </Button>
+                </CardContent>
               </Card>
             ))}
           </div>
@@ -756,6 +800,42 @@ const AdminPanel = ({
             </Button>
             <Button onClick={addProduct}>
               Добавить товар
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editingProduct} onOpenChange={() => setEditingProduct(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Редактировать товар</DialogTitle>
+            <DialogDescription>
+              {editingProduct?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center justify-between space-x-2">
+              <div className="space-y-0.5">
+                <Label htmlFor="in-stock">Наличие товара</Label>
+                <p className="text-sm text-muted-foreground">
+                  {editingProduct?.in_stock ? 'Товар в наличии' : 'Товара нет в наличии'}
+                </p>
+              </div>
+              <Switch
+                id="in-stock"
+                checked={editingProduct?.in_stock ?? true}
+                onCheckedChange={(checked) => {
+                  if (editingProduct) {
+                    updateProduct(editingProduct.id, checked);
+                    setEditingProduct({ ...editingProduct, in_stock: checked });
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setEditingProduct(null)}>
+              Готово
             </Button>
           </DialogFooter>
         </DialogContent>
