@@ -1,0 +1,28 @@
+{
+  "tests": [
+    {
+      "name": "Test get products",
+      "method": "GET",
+      "path": "/?action=products",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "products": "array"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Test login with valid credentials",
+      "method": "POST",
+      "path": "/?action=login",
+      "body": {
+        "username": "admin",
+        "password": "admin"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "user": "object"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

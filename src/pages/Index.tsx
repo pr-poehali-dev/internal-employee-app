@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import Icon from '@/components/ui/icon';
 import { useToast } from '@/hooks/use-toast';
+import { api, type Product as ApiProduct, type Order as ApiOrder, type User } from '@/lib/api';
 
 type Product = {
   id: number;
@@ -75,25 +76,88 @@ const Index = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<number>(0);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [showCart, setShowCart] = useState(false);
-  const [adminProducts, setAdminProducts] = useState<Product[]>(mockProducts);
+  const [adminProducts, setAdminProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<'шт' | 'уп' | 'коробка'>('шт');
   const [quantity, setQuantity] = useState(1);
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  const handleLogin = (username: string, password: string) => {
-    if (username === 'admin' && password === 'admin') {
-      setIsAdmin(true);
-      setCurrentUser('Администратор');
-    } else {
-      setIsAdmin(false);
-      setCurrentUser(username);
+  useEffect(() => {
+    if (isLoggedIn) {
+      loadProducts();
+      loadOrders();
     }
-    setIsLoggedIn(true);
+  }, [isLoggedIn]);
+
+  const loadProducts = async () => {
+    try {
+      const { products } = await api.getProducts();
+      setAdminProducts(products.map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        image: p.image_url || '/placeholder.svg'
+      })));
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось загрузить товары',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const loadOrders = async () => {
+    try {
+      const { orders: apiOrders } = await api.getOrders(isAdmin ? undefined : currentUserId);
+      setOrders(apiOrders.map(o => ({
+        id: o.id,
+        employee: o.employee,
+        status: o.status,
+        date: o.date,
+        items: o.items.map(item => ({
+          product: {
+            id: item.product_id,
+            name: item.name,
+            description: item.description,
+            image: item.image_url
+          },
+          quantity: item.quantity,
+          unit: item.unit as 'шт' | 'уп' | 'коробка'
+        }))
+      })));
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось загрузить заявки',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleLogin = async (username: string, password: string) => {
+    setLoading(true);
+    try {
+      const { user } = await api.login(username, password);
+      setIsAdmin(user.is_admin);
+      setCurrentUser(user.username);
+      setCurrentUserId(user.id);
+      setIsLoggedIn(true);
+    } catch (error) {
+      toast({
+        title: 'Ошибка входа',
+        description: 'Неверное имя пользователя или пароль',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const addToCart = (product: Product) => {
@@ -123,36 +187,56 @@ const Index = () => {
     setCart(cart.filter(item => !(item.product.id === productId && item.unit === unit)));
   };
 
-  const submitOrder = () => {
+  const submitOrder = async () => {
     if (cart.length === 0) return;
 
-    const newOrder: Order = {
-      id: orders.length + 1,
-      items: [...cart],
-      date: new Date().toLocaleDateString('ru-RU'),
-      status: 'pending',
-      employee: currentUser
-    };
+    setLoading(true);
+    try {
+      const items = cart.map(item => ({
+        product_id: item.product.id,
+        quantity: item.quantity,
+        unit: item.unit
+      }));
 
-    setOrders([newOrder, ...orders]);
-    setCart([]);
-    setShowCart(false);
+      await api.createOrder(currentUserId, currentUser, items);
+      await loadOrders();
+      setCart([]);
+      setShowCart(false);
 
-    toast({
-      title: 'Заявка отправлена',
-      description: 'Ваша заявка успешно отправлена администратору'
-    });
+      toast({
+        title: 'Заявка отправлена',
+        description: 'Ваша заявка успешно отправлена администратору'
+      });
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось отправить заявку',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const updateOrderStatus = (orderId: number, status: Order['status']) => {
-    setOrders(orders.map(order =>
-      order.id === orderId ? { ...order, status } : order
-    ));
+  const updateOrderStatus = async (orderId: number, status: Order['status']) => {
+    setLoading(true);
+    try {
+      await api.updateOrderStatus(orderId, status);
+      await loadOrders();
 
-    toast({
-      title: 'Статус обновлен',
-      description: `Заявка #${orderId} отмечена как ${status === 'collected' ? 'собрана' : 'выполнена'}`
-    });
+      toast({
+        title: 'Статус обновлен',
+        description: `Заявка #${orderId} отмечена как ${status === 'collected' ? 'собрана' : 'выполнена'}`
+      });
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось обновить статус',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!isLoggedIn) {
@@ -430,7 +514,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, password: string
               Войти
             </Button>
             <p className="text-xs text-center text-muted-foreground">
-              Демо: admin/admin (админ) или любые данные (сотрудник)
+              Логин: admin или employee, пароль: admin или employee
             </p>
           </form>
         </CardContent>
@@ -454,22 +538,31 @@ const AdminPanel = ({
   const [newProduct, setNewProduct] = useState({ name: '', description: '', image: '/placeholder.svg' });
   const { toast } = useToast();
 
-  const addProduct = () => {
+  const addProduct = async () => {
     if (!newProduct.name || !newProduct.description) return;
 
-    const product: Product = {
-      id: products.length + 1,
-      ...newProduct
-    };
+    try {
+      const { product } = await api.createProduct(newProduct.name, newProduct.description, newProduct.image);
+      setProducts([...products, {
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        image: product.image_url || '/placeholder.svg'
+      }]);
+      setNewProduct({ name: '', description: '', image: '/placeholder.svg' });
+      setShowAddProduct(false);
 
-    setProducts([...products, product]);
-    setNewProduct({ name: '', description: '', image: '/placeholder.svg' });
-    setShowAddProduct(false);
-
-    toast({
-      title: 'Товар добавлен',
-      description: `${product.name} успешно добавлен в каталог`
-    });
+      toast({
+        title: 'Товар добавлен',
+        description: `${product.name} успешно добавлен в каталог`
+      });
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось добавить товар',
+        variant: 'destructive'
+      });
+    }
   };
 
   const pendingOrders = orders.filter(o => o.status === 'pending');
