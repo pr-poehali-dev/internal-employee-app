@@ -86,6 +86,8 @@ const Index = () => {
   const [selectedUnit, setSelectedUnit] = useState<'шт' | 'уп' | 'коробка'>('шт');
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState<string>('');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -189,6 +191,15 @@ const Index = () => {
 
   const submitOrder = async () => {
     if (cart.length === 0) return;
+    
+    if (!selectedLocation) {
+      toast({
+        title: 'Выберите точку',
+        description: 'Пожалуйста, выберите от какой точки заявка',
+        variant: 'destructive'
+      });
+      return;
+    }
 
     setLoading(true);
     try {
@@ -198,10 +209,11 @@ const Index = () => {
         unit: item.unit
       }));
 
-      await api.createOrder(currentUserId, currentUser, items);
+      await api.createOrder(currentUserId, `${currentUser} (${selectedLocation})`, items);
       await loadOrders();
       setCart([]);
       setShowCart(false);
+      setSelectedLocation('');
 
       toast({
         title: 'Заявка отправлена',
@@ -290,28 +302,44 @@ const Index = () => {
             </TabsList>
 
             <TabsContent value="catalog">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-2xl font-bold">Хозяйственные товары</h2>
-                <div className="flex gap-2">
-                  <Button
-                    variant={viewMode === 'grid' ? 'default' : 'outline'}
-                    size="icon"
-                    onClick={() => setViewMode('grid')}
-                  >
-                    <Icon name="LayoutGrid" size={20} />
-                  </Button>
-                  <Button
-                    variant={viewMode === 'list' ? 'default' : 'outline'}
-                    size="icon"
-                    onClick={() => setViewMode('list')}
-                  >
-                    <Icon name="List" size={20} />
-                  </Button>
+              <div className="mb-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold">Хозяйственные товары</h2>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={viewMode === 'grid' ? 'default' : 'outline'}
+                      size="icon"
+                      onClick={() => setViewMode('grid')}
+                    >
+                      <Icon name="LayoutGrid" size={20} />
+                    </Button>
+                    <Button
+                      variant={viewMode === 'list' ? 'default' : 'outline'}
+                      size="icon"
+                      onClick={() => setViewMode('list')}
+                    >
+                      <Icon name="List" size={20} />
+                    </Button>
+                  </div>
+                </div>
+                <div className="relative">
+                  <Icon name="Search" size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Поиск товаров..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
                 </div>
               </div>
 
               <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-3'}>
-                {adminProducts.map(product => (
+                {adminProducts
+                  .filter(product => 
+                    product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    product.description.toLowerCase().includes(searchQuery.toLowerCase())
+                  )
+                  .map(product => (
                   <Card
                     key={product.id}
                     className={`cursor-pointer hover:shadow-md transition-shadow ${viewMode === 'list' ? 'flex flex-row' : ''}`}
@@ -435,24 +463,43 @@ const Index = () => {
               {cart.length === 0 ? 'Корзина пуста' : `Товаров в корзине: ${cart.length}`}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 max-h-96 overflow-y-auto">
-            {cart.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
-                <div className="flex-1">
-                  <h4 className="font-medium">{item.product.name}</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {item.quantity} {item.unit}
-                  </p>
+          <div className="space-y-4">
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {cart.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex-1">
+                    <h4 className="font-medium">{item.product.name}</h4>
+                    <p className="text-sm text-muted-foreground">
+                      {item.quantity} {item.unit}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeFromCart(item.product.id, item.unit)}
+                  >
+                    <Icon name="Trash2" size={18} />
+                  </Button>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => removeFromCart(item.product.id, item.unit)}
-                >
-                  <Icon name="Trash2" size={18} />
-                </Button>
+              ))}
+            </div>
+            {cart.length > 0 && (
+              <div className="space-y-2 pt-4 border-t">
+                <Label>От какой точки заявка? *</Label>
+                <Select value={selectedLocation} onValueChange={setSelectedLocation}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите точку" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Казбеги">Казбеги</SelectItem>
+                    <SelectItem value="Аляска">Аляска</SelectItem>
+                    <SelectItem value="Они">Они</SelectItem>
+                    <SelectItem value="Маяк">Маяк</SelectItem>
+                    <SelectItem value="Аэропорт">Аэропорт</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            ))}
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCart(false)}>
